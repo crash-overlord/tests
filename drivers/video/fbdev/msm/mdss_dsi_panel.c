@@ -28,10 +28,6 @@
 #include "mdss_debug.h"
 #include "mdss_livedisplay.h"
 
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
-
 #define DT_CMD_HDR 6
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
@@ -52,14 +48,6 @@ extern bool synaptics_gesture_enable_flag;
 
 bool ESD_TE_status = false;
 DEFINE_LED_TRIGGER(bl_led_trigger);
-
-static bool ce_enable = true;
-static bool srgb_enable = true;
-static bool cabc_enable = false;
-
-module_param(ce_enable, bool, 0644);
-module_param(srgb_enable, bool, 0644);
-module_param(cabc_enable, bool, 0644);
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1055,10 +1043,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_panel_hook(POWER_SUSPEND_INACTIVE);
-#endif
-
 	pinfo = &pdata->panel_info;
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
@@ -1185,10 +1169,6 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 		mdss_dba_utils_video_off(pinfo->dba_data);
 		mdss_dba_utils_hdcp_enable(pinfo->dba_data, false);
 	}
-
-#ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_panel_hook(POWER_SUSPEND_ACTIVE);
-#endif
 
 end:
 	pr_debug("%s:-\n", __func__);
