@@ -567,9 +567,10 @@ config DEFAULT_TCP_CONG
 	default "westwood" if DEFAULT_WESTWOOD
 	default "veno" if DEFAULT_VENO
 	default "reno" if DEFAULT_RENO
+	default "bbr" if DEFAULT_BBR
+	default "cubic" if DEFAULT_CUBIC
     default "highspeed" if DEFAULT_HIGHSPEED
-    
-	default "cubic"
+
 
 config TCP_MD5SIG
 	bool "TCP: MD5 Signature Option support (RFC2385)"
