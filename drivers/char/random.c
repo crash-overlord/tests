@@ -1351,7 +1351,7 @@ void get_random_bytes_arch(void *buf, int nbytes)
 
 		if (!arch_get_random_long(&v))
 			break;
-		
+
 		memcpy(p, &v, chunk);
 		p += chunk;
 		nbytes -= chunk;
@@ -1454,12 +1454,6 @@ _random_read(int nonblock, char __user *buf, size_t nbytes)
 		if (signal_pending(current))
 			return -ERESTARTSYS;
 	}
-}
-
-static ssize_t
-random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
-{
-	return _random_read(file->f_flags & O_NONBLOCK, buf, nbytes);
 }
 
 static ssize_t
