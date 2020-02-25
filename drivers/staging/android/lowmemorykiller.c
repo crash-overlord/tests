@@ -47,15 +47,11 @@
 #include <linux/swap.h>
 #include <linux/fs.h>
 #include <linux/cpuset.h>
-#include <linux/vmpressure.h>
 #include <linux/zcache.h>
 #include <linux/circ_buf.h>
 #include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
-
-#define CREATE_TRACE_POINTS
-#include <trace/events/almk.h>
 
 #ifdef CONFIG_HIGHMEM
 #define _ZONE ZONE_HIGHMEM
@@ -552,7 +548,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	unsigned long rem = 0;
 	int tasksize;
 	int i;
-	int ret = 0;
 	short min_score_adj = OOM_SCORE_ADJ_MAX + 1;
 	int minfree = 0;
 	int selected_tasksize = 0;
@@ -588,8 +583,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			break;
 		}
 	}
-
-	ret = adjust_minadj(&min_score_adj);
 
 	lowmem_print(3, "lowmem_scan %lu, %x, ofree %d %d, ma %hd\n",
 			sc->nr_to_scan, sc->gfp_mask, other_free,
