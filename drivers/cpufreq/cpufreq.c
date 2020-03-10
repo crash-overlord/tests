@@ -1257,8 +1257,17 @@ static int cpufreq_online(unsigned int cpu)
 	policy = per_cpu(cpufreq_cpu_data, cpu);
 	if (policy) {
 		WARN_ON(!cpumask_test_cpu(cpu, policy->related_cpus));
-		if (!policy_is_inactive(policy))
-			return cpufreq_add_policy_cpu(policy, cpu);
+		if (!policy_is_inactive(policy)) {
+                        ret = cpufreq_add_policy_cpu(policy, cpu);
+#ifdef CONFIG_MSM_PERFORMANCE_HOTPLUG_ON
+			if (!ret) {
+				if (add_cpu_dev_symlink(policy, cpu) != 0) {
+					pr_debug("could not add dev link back for cpu:%u\n", cpu);
+				}
+			}
+#endif
+			return ret;
+		}
 
 		/* This is the only online CPU for the policy.  Start over. */
 		new_policy = false;
@@ -1269,8 +1278,9 @@ static int cpufreq_online(unsigned int cpu)
 	} else {
 		new_policy = true;
 		policy = cpufreq_policy_alloc(cpu);
-		if (!policy)
+		if (!policy) {
 			return -ENOMEM;
+		}
 	}
 
 	cpumask_copy(policy->cpus, cpumask_of(cpu));
@@ -1377,6 +1387,7 @@ static int cpufreq_online(unsigned int cpu)
 		ret = cpufreq_add_dev_interface(policy);
 		if (ret)
 			goto out_exit_policy;
+
 		blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
 				CPUFREQ_CREATE_POLICY, policy);
 
@@ -1384,6 +1395,12 @@ static int cpufreq_online(unsigned int cpu)
 		list_add(&policy->policy_list, &cpufreq_policy_list);
 		write_unlock_irqrestore(&cpufreq_driver_lock, flags);
 	}
+
+#ifdef CONFIG_MSM_PERFORMANCE_HOTPLUG_ON
+        if (add_cpu_dev_symlink(policy, cpu) != 0) {
+        	pr_debug("could not add dev link back for cpu:%u\n", cpu);
+        }
+#endif
 
 	ret = cpufreq_init_policy(policy);
 	if (ret) {
@@ -1477,6 +1494,11 @@ static void cpufreq_offline_prepare(unsigned int cpu)
 		/* Nominate new CPU */
 		policy->cpu = cpumask_any(policy->cpus);
 	}
+
+#ifdef CONFIG_MSM_PERFORMANCE_HOTPLUG_ON
+        remove_cpu_dev_symlink(policy, cpu);
+#endif
+
 	up_write(&policy->rwsem);
 
 	/* Start governor again for active policy */
