@@ -290,19 +290,6 @@ config CPU_FREQ_GOV_CONSERVATIVE
 	  For details, take a look at linux/Documentation/cpu-freq.
 
 	  If in doubt, say N.
-config CPU_FREQ_GOV_INTELLIACTIVE
-	tristate "'intelliactive' governor"
-	help
-	  This cpufreq governor sets the frequency statically to the
-	  highest available CPU frequency.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_intelliactive.
-
-	  If in doubt, say Y.
-	  
-	  
-	  
 
 
 
