@@ -101,7 +101,7 @@
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #ifdef ENABLE_PROFILES_SUPPORT
 #include "cpufreq_zzmoove_profiles.h"
-#define DEF_PROFILE_NUMBER				(5)	// ZZ: default profile number (profile = 5 = 'zzbatp' = tuneable mode)
+#define DEF_PROFILE_NUMBER				(2)	// ZZ: default profile number (profile = 2 = 'ybat' = tuneable mode)
 static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any profile value has changed
 
 // ff: allows tuneables to be tweaked without reverting to "custom" profile
@@ -138,7 +138,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #endif /* ENABLE_HOTPLUGGING */
 #define DEF_IGNORE_NICE					(0)	// ZZ: default ignore nice load
 #ifdef ENABLE_AUTO_ADJUST_FREQ
-#define DEF_AUTO_ADJUST_FREQ				(0)	// ZZ: default auto adjust frequency thresholds
+#define DEF_AUTO_ADJUST_FREQ				(1)	// ZZ: default auto adjust frequency thresholds
 #endif /* ENABLE_AUTO_ADJUST_FREQ */
 
 // ZZ: hotplug-switch, -block, -idle, -limit and scaling-block, -fastdown, -responiveness, -proportional tuneable defaults
@@ -193,7 +193,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 
 // ZZ: sampling rate idle and sampling down momentum tuneable defaults
 #define DEF_SAMPLING_RATE_IDLE_THRESHOLD		(0)	// ZZ: default sampling rate idle threshold
-#define DEF_SAMPLING_RATE_IDLE				(180000)// ZZ: default sampling rate idle (must not be 0!)
+#define DEF_SAMPLING_RATE_IDLE				(200000)// ZZ: default sampling rate idle (must not be 0!)
 #define DEF_SAMPLING_RATE_IDLE_DELAY			(0)	// ZZ: default sampling rate idle delay
 #define DEF_SAMPLING_DOWN_FACTOR			(1)	// ZZ: default sampling down factor (stratosk default = 4) here disabled by default
 #define MAX_SAMPLING_DOWN_FACTOR			(100000)// ZZ: changed from 10 to 100000 for sampling down momentum implementation
