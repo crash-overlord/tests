@@ -66,8 +66,6 @@
 		#cooling-cells = <2>;
 		qcom,id = <0>;
 
-		qcom,chipid = <0x05010200>;
-
 		qcom,initial-pwrlevel = <6>;
 
 		qcom,idle-timeout = <64>;
