@@ -861,7 +861,7 @@
 
 		qcom,vdd-gfx-rstr{
 			qcom,vdd-rstr-reg = "vdd-gfx";
-			qcom,levels = <5 7 7>; /* Nominal, Turbo, Turbo */
+			qcom,levels = <5 6 6>; /* Nominal, Turbo, Turbo */
 			qcom,min-level = <1>; /* No Request */
 		};
 
