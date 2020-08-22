@@ -3383,11 +3383,8 @@ static ssize_t ext4_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
-//	size_t count = iov_iter_count(iter);
+	size_t count = iov_iter_count(iter);
 	ssize_t ret;
-
-#if defined(CONFIG_EXT4_FS_ENCRYPTION) && \
-!defined(CONFIG_EXT4_FS_ICE_ENCRYPTION)
 
 	if (iov_iter_rw(iter) == READ) {
 		loff_t size = i_size_read(inode);
