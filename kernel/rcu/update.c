@@ -113,7 +113,8 @@ EXPORT_SYMBOL(rcu_read_lock_sched_held);
 
 #ifndef CONFIG_TINY_RCU
 
-static atomic_t rcu_expedited_nesting =ATOMIC_INIT(1);
+static atomic_t rcu_expedited_nesting =
+	ATOMIC_INIT(IS_ENABLED(CONFIG_RCU_EXPEDITE_BOOT) ? 1 : 0);
 
 /*
  * Should normal grace-period primitives be expedited?  Intended for
