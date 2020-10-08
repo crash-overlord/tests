@@ -118,4 +118,4 @@ all.config
 android/configs/android-*.cfg
 
 # ignore out folder
-out
+out/*
