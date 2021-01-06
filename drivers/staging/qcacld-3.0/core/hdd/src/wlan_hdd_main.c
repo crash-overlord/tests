@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -65,7 +65,6 @@
 #include <linux/ctype.h>
 #include <linux/compat.h>
 #include <linux/reboot.h>
-#include <linux/random.h>
 #ifdef MSM_PLATFORM
 #include <soc/qcom/subsystem_restart.h>
 #endif
@@ -147,7 +146,25 @@ static struct cdev wlan_hdd_state_cdev;
 static struct class *class;
 static dev_t device;
 #ifndef MODULE
-static struct work_struct boot_work;
+static struct gwlan_loader *wlan_loader;
+static ssize_t wlan_boot_cb(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf, size_t count);
+struct gwlan_loader {
+	bool loaded_state;
+	struct kobject *boot_wlan_obj;
+	struct attribute_group *attr_group;
+};
+
+static struct kobj_attribute wlan_boot_attribute =
+	__ATTR(boot_wlan, 0220, NULL, wlan_boot_cb);
+
+static struct attribute *attrs[] = {
+	&wlan_boot_attribute.attr,
+	NULL,
+};
+
+#define MODULE_INITIALIZED 1
 #endif
 
 #define HDD_OPS_INACTIVITY_TIMEOUT (120000)
@@ -382,7 +399,6 @@ int hdd_validate_channel_and_bandwidth(hdd_adapter_t *adapter,
 	return 0;
 }
 
-#ifdef MODULE
 /**
  * hdd_wait_for_recovery_completion() - Wait for cds recovery completion
  *
@@ -422,7 +438,6 @@ static bool hdd_wait_for_recovery_completion(void)
 	hdd_info("Recovery completed successfully!");
 	return true;
 }
-#endif
 
 
 static int __hdd_netdev_notifier_call(struct notifier_block *nb,
@@ -515,6 +530,8 @@ static int __hdd_netdev_notifier_call(struct notifier_block *nb,
 				hdd_err("Timeout occurred while waiting for abortscan");
 		}
 		cds_flush_work(&adapter->scan_block_work);
+		/* Need to clean up blocked scan request */
+		wlan_hdd_cfg80211_scan_block_cb(&adapter->scan_block_work);
 		hdd_debug("Scan is not Pending from user");
 		/*
 		 * After NETDEV_GOING_DOWN, kernel calls hdd_stop.Irrespective
@@ -1133,7 +1150,6 @@ static void hdd_update_wiphy_vhtcap(hdd_context_t *hdd_ctx)
 
 	hdd_debug("Updated wiphy vhtcap:0x%x, CSNAntSupp:%d, NumSoundDim:%d",
 		  band_5g->vht_cap.cap, hdd_ctx->config->txBFCsnValue, val);
-
 }
 
 /**
@@ -1244,7 +1260,6 @@ static void hdd_update_tgt_ht_cap(hdd_context_t *hdd_ctx,
 			hdd_err("VHT_TX_HIGHEST_SUPP_RATE_1_1 to CCM fail");
 		}
 	}
-
 	if (!(cfg->ht_tx_stbc && pconfig->enable2x2))
 		enable_tx_stbc = 0;
 	phtCapInfo->txSTBC = enable_tx_stbc;
@@ -1580,7 +1595,6 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 		hdd_err("could not get GI 80 & 160");
 		value = 0;
 	}
-	pconfig->ShortGI160MhzEnable = cfg->vht_short_gi_160;
 	/* set the Guard interval 160MHz */
 	if (value && !cfg->vht_short_gi_160) {
 		status = sme_cfg_set_int(hdd_ctx->hHal,
@@ -1611,7 +1625,6 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 		}
 	}
 
-	pconfig->ShortGI80MhzEnable = cfg->vht_short_gi_80;
 	if (cfg->vht_short_gi_80 & WMI_VHT_CAP_SGI_80MHZ)
 		band_5g->vht_cap.cap |= IEEE80211_VHT_CAP_SHORT_GI_80;
 
@@ -1640,6 +1653,7 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 
 	if (cfg->vht_txop_ps & WMI_VHT_CAP_TXOP_PS)
 		band_5g->vht_cap.cap |= IEEE80211_VHT_CAP_VHT_TXOP_PS;
+
 }
 
 /**
@@ -2376,8 +2390,7 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		if (!reinit && !unint) {
 			ret = pld_power_on(qdf_dev->dev);
 			if (ret) {
-				hdd_err("Failed to Powerup the device; errno: %d",
-					ret);
+				hdd_err("Failed to Powerup the device: %d", ret);
 				goto release_lock;
 			}
 		}
@@ -2390,7 +2403,7 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 				   (reinit == true) ?  HIF_ENABLE_TYPE_REINIT :
 				   HIF_ENABLE_TYPE_PROBE);
 		if (ret) {
-			hdd_err("Failed to open hif; errno: %d", ret);
+			hdd_err("Failed to open hif: %d", ret);
 			goto power_down;
 		}
 
@@ -2403,22 +2416,20 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 
 		status = ol_cds_init(qdf_dev, hif_ctx);
 		if (status != QDF_STATUS_SUCCESS) {
-			hdd_err("No Memory to Create BMI Context; status: %d",
-				status);
+			hdd_err("No Memory to Create BMI Context :%d", status);
 			ret = qdf_status_to_os_return(status);
 			goto hif_close;
 		}
 
 		ret = hdd_update_config(hdd_ctx);
 		if (ret) {
-			hdd_err("Failed to update configuration; errno: %d",
-				ret);
+			hdd_err("Failed to update configuration :%d", ret);
 			goto ol_cds_free;
 		}
 
 		status = cds_open();
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
-			hdd_err("Failed to Open CDS; status: %d", status);
+			hdd_err("Failed to Open CDS: %d", status);
 			ret = (status == QDF_STATUS_E_NOMEM) ? -ENOMEM : -EINVAL;
 			goto deinit_config;
 		}
@@ -2440,8 +2451,8 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 
 		status = cds_pre_enable(hdd_ctx->pcds_context);
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
-			hdd_err("Failed to pre-enable CDS; status: %d", status);
-			ret = qdf_status_to_os_return(status);
+			hdd_err("Failed to pre-enable CDS: %d", status);
+			ret = (status == QDF_STATUS_E_NOMEM) ? -ENOMEM : -EINVAL;
 			goto deregister_cb;
 		}
 
@@ -2470,10 +2481,9 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		}
 
 		if (reinit) {
-			ret = hdd_ipa_uc_ssr_reinit(hdd_ctx);
-			if (ret) {
-				hdd_err("HDD IPA UC reinit failed; errno: %d",
-					ret);
+			if (hdd_ipa_uc_ssr_reinit(hdd_ctx)) {
+				hdd_err("HDD IPA UC reinit failed");
+				ret = -EINVAL;
 				goto err_ipa_cleanup;
 			}
 		}
@@ -2483,19 +2493,16 @@ int hdd_wlan_start_modules(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		hdd_info("Wlan transition (OPENED -> ENABLED)");
 		if (!adapter) {
 			hdd_err("adapter is Null");
-			ret = -EINVAL;
 			goto err_ipa_cleanup;
 		}
 
 		if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 			hdd_err("in ftm mode, no need to configure cds modules");
-			ret = -EINVAL;
 			break;
 		}
 
-		ret = hdd_configure_cds(hdd_ctx, adapter);
-		if (ret) {
-			hdd_err("Failed to Enable cds modules; errno: %d", ret);
+		if (hdd_configure_cds(hdd_ctx, adapter)) {
+			hdd_err("Failed to Enable cds modules");
 			ret = -EINVAL;
 			goto err_ipa_cleanup;
 		}
@@ -3672,8 +3679,8 @@ QDF_STATUS hdd_init_station_mode(hdd_adapter_t *adapter)
 	status = hdd_lro_enable(hdd_ctx, adapter);
 	if (status)
 		/* Err code from errno.h */
-		hdd_debug("LRO is disabled either because of kernel doesnot support or disabled in INI or via vendor commandi. err code %d",
-			  status);
+		hdd_err("LRO is disabled either because of kernel doesnot support or disabled in INI or via vendor commandi. err code %d",
+		status);
 
 	/* rcpi info initialization */
 	qdf_mem_zero(&adapter->rcpi, sizeof(adapter->rcpi));
@@ -3732,7 +3739,7 @@ void hdd_cleanup_actionframe(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter)
 			&adapter->tx_action_cnf_event,
 			msecs_to_jiffies(ACTION_FRAME_TX_TIMEOUT));
 		if (!rc) {
-			hdd_debug("HDD Wait for Action Confirmation Failed!!");
+			hdd_err("HDD Wait for Action Confirmation Failed!!");
 			/*
 			 * Inform tx status as FAILURE to upper layer and free
 			 * cfgState->buf
@@ -3954,9 +3961,6 @@ static void hdd_cleanup_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		hdd_err("adapter is Null");
 		return;
 	}
-
-	qdf_list_destroy(&adapter->blocked_scan_request_q);
-	qdf_mutex_destroy(&adapter->blocked_scan_request_q_lock);
 
 	wlan_hdd_debugfs_csr_deinit(adapter);
 	qdf_mutex_destroy(&adapter->arp_offload_info_lock);
@@ -4742,6 +4746,9 @@ QDF_STATUS hdd_close_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 	if (QDF_STATUS_SUCCESS == status) {
 		hdd_bus_bw_compute_timer_stop(hdd_ctx);
 
+		qdf_list_destroy(&adapter->blocked_scan_request_q);
+		qdf_mutex_destroy(&adapter->blocked_scan_request_q_lock);
+
 		/* cleanup adapter */
 		cds_clear_concurrency_mode(adapter->device_mode);
 		hdd_cleanup_adapter(hdd_ctx, adapterNode->pAdapter, rtnl_held);
@@ -4966,8 +4973,6 @@ QDF_STATUS hdd_stop_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 		return -ENODEV;
 	}
 
-	/* Need to clean up blocked scan request */
-	wlan_hdd_cfg80211_scan_block_cb(&adapter->scan_block_work);
 	scan_info = &adapter->scan_info;
 	hdd_info("Disabling queues");
 	wlan_hdd_netif_queue_control(adapter,
@@ -5056,34 +5061,11 @@ QDF_STATUS hdd_stop_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 #endif
 
 		/*
-		 * During vdev destroy, if any STA is in connecting state the
-		 * roam command will be in active queue and thus vdev destroy is
-		 * queued in pending queue. In case STA tries to connect to
-		 * multiple BSSID and fails to connect, due to auth/assoc
-		 * timeouts it may take more than vdev destroy time to get
-		 * completed. So before vdev destroy is queued abort any STA
-		 * ongoing connection to avoid vdev destroy timeout.
-		 */
-		if (test_bit(SME_SESSION_OPENED, &adapter->event_flags))
-			hdd_abort_ongoing_sta_connection(hdd_ctx);
-		/*
 		 * It is possible that the caller of this function does not
 		 * wish to close the session
 		 */
 		if (true == bCloseSession)
 			hdd_wait_for_sme_close_sesion(hdd_ctx, adapter, false);
-		break;
-
-	case QDF_MONITOR_MODE:
-		wlan_hdd_scan_abort(adapter);
-		hdd_deregister_tx_flow_control(adapter);
-
-		/*
-		 * It is possible that the caller of this function does not
-		 * wish to close the session
-		 */
-		if (bCloseSession)
-			hdd_wait_for_sme_close_sesion(hdd_ctx, adapter, true);
 		break;
 
 	case QDF_SAP_MODE:
@@ -5120,18 +5102,6 @@ QDF_STATUS hdd_stop_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 			wlan_hdd_cleanup_remain_on_channel_ctx(adapter);
 
 		hdd_deregister_tx_flow_control(adapter);
-
-		/*
-		 * During vdev destroy, if any STA is in connecting state the
-		 * roam command will be in active queue and thus vdev destroy is
-		 * queued in pending queue. In case STA tries to connect to
-		 * multiple BSSID and fails to connect, due to auth/assoc
-		 * timeouts it may take more than vdev destroy time to get
-		 * complete. So before vdev destroy is queued abort any STA
-		 * ongoing connection to avoid vdev destroy timeout.
-		 */
-		if (test_bit(SME_SESSION_OPENED, &adapter->event_flags))
-			hdd_abort_ongoing_sta_connection(hdd_ctx);
 
 		mutex_lock(&hdd_ctx->sap_lock);
 		if (test_bit(SOFTAP_BSS_STARTED, &adapter->event_flags)) {
@@ -6689,6 +6659,32 @@ out:
 }
 
 /**
+ * hdd_rx_wake_lock_destroy() - Destroy RX wakelock
+ * @hdd_ctx:	HDD context.
+ *
+ * Destroy RX wakelock.
+ *
+ * Return: None.
+ */
+static void hdd_rx_wake_lock_destroy(hdd_context_t *hdd_ctx)
+{
+	qdf_wake_lock_destroy(&hdd_ctx->rx_wake_lock);
+}
+
+/**
+ * hdd_rx_wake_lock_create() - Create RX wakelock
+ * @hdd_ctx:	HDD context.
+ *
+ * Create RX wakelock.
+ *
+ * Return: None.
+ */
+static void hdd_rx_wake_lock_create(hdd_context_t *hdd_ctx)
+{
+	qdf_wake_lock_create(&hdd_ctx->rx_wake_lock, "qcom_rx_wakelock");
+}
+
+/**
  * hdd_roc_context_init() - Init ROC context
  * @hdd_ctx:	HDD context.
  *
@@ -6741,6 +6737,8 @@ static int hdd_context_deinit(hdd_context_t *hdd_ctx)
 	hdd_roc_context_destroy(hdd_ctx);
 
 	hdd_sap_context_destroy(hdd_ctx);
+
+	hdd_rx_wake_lock_destroy(hdd_ctx);
 
 	hdd_tdls_context_destroy(hdd_ctx);
 
@@ -8845,6 +8843,8 @@ static int hdd_context_init(hdd_context_t *hdd_ctx)
 
 	hdd_tdls_context_init(hdd_ctx, false);
 
+	hdd_rx_wake_lock_create(hdd_ctx);
+
 	ret = hdd_sap_context_init(hdd_ctx);
 	if (ret)
 		goto scan_destroy;
@@ -8875,6 +8875,7 @@ sap_destroy:
 
 scan_destroy:
 	hdd_scan_context_destroy(hdd_ctx);
+	hdd_rx_wake_lock_destroy(hdd_ctx);
 	hdd_tdls_context_destroy(hdd_ctx);
 
 list_destroy:
@@ -10101,49 +10102,6 @@ void hdd_populate_random_mac_addr(hdd_context_t *hdd_ctx, uint32_t num)
 	}
 }
 
-static int randomize_mac = 1;
-
-static struct ctl_table randomize_mac_table[] =
-{
-       {
-               .procname       = "randomize_mac",
-               .data           = &randomize_mac,
-               .maxlen         = sizeof(int),
-               .mode           = 0600,
-               .proc_handler   = proc_dointvec
-       },
-       { }
-};
-
-static struct ctl_table cnss_table[] =
-{
-       {
-               .procname       = "cnss",
-               .maxlen         = 0,
-               .mode           = 0555,
-               .child          = randomize_mac_table,
-       },
-       { }
-};
-
-static struct ctl_table dev_table[] =
-{
-       {
-               .procname       = "dev",
-               .maxlen         = 0,
-               .mode           = 0555,
-               .child          = cnss_table,
-       },
-       { }
-};
-
-static int __init init_randomize_mac(void)
-{
-	register_sysctl_table(dev_table);
-	return 0;
-}
-late_initcall(init_randomize_mac);
-
 /**
  * hdd_platform_wlan_mac() - API to get mac addresses from platform driver
  * @hdd_ctx: HDD Context
@@ -10158,7 +10116,6 @@ static int hdd_platform_wlan_mac(hdd_context_t *hdd_ctx)
 	uint32_t max_mac_addr = QDF_MAX_CONCURRENCY_PERSONA;
 	uint32_t mac_addr_size = QDF_MAC_ADDR_SIZE;
 	uint8_t *addr, *buf;
-	u8 addr_random[QDF_MAX_CONCURRENCY_PERSONA * QDF_MAC_ADDR_SIZE];
 	struct device *dev = hdd_ctx->parent_dev;
 	tSirMacAddr mac_addr;
 	QDF_STATUS status;
@@ -10169,13 +10126,6 @@ static int hdd_platform_wlan_mac(hdd_context_t *hdd_ctx)
 		return -EINVAL;
 
 	hdd_free_mac_address_lists(hdd_ctx);
-
-	if (randomize_mac) {
-		memcpy(addr_random, addr, no_of_mac_addr * mac_addr_size);
-		for (iter = 0; iter < no_of_mac_addr * mac_addr_size; iter += QDF_MAC_ADDR_SIZE)
-			get_random_bytes(&addr_random[iter + 3], 3);
-		addr = addr_random;
-	}
 
 	if (no_of_mac_addr > max_mac_addr)
 		no_of_mac_addr = max_mac_addr;
@@ -11350,7 +11300,6 @@ int hdd_wlan_stop_modules(hdd_context_t *hdd_ctx, bool ftm_mode)
 	}
 	/* Free the cache channels of the command SET_DISABLE_CHANNEL_LIST */
 	wlan_hdd_free_cache_channels(hdd_ctx);
-	hdd_driver_mem_cleanup();
 
 	/* many adapter resources are not freed by design in SSR case */
 	if (!is_recover_stop)
@@ -12850,7 +12799,6 @@ dev_alloc_err:
 	return -ENODEV;
 }
 
-#ifdef MODULE
 static void wlan_hdd_state_ctrl_param_destroy(void)
 {
 	cdev_del(&wlan_hdd_state_cdev);
@@ -12860,7 +12808,6 @@ static void wlan_hdd_state_ctrl_param_destroy(void)
 
 	pr_info("Device node unregistered");
 }
-#endif
 
 /**
  * __hdd_module_init - Module init helper
@@ -12914,7 +12861,7 @@ err_hdd_init:
 	return ret;
 }
 
-#ifdef MODULE
+
 /**
  * __hdd_module_exit - Module exit helper
  *
@@ -12944,6 +12891,135 @@ static void __hdd_module_exit(void)
 	wlan_hdd_state_ctrl_param_destroy();
 }
 
+#ifndef MODULE
+/**
+ * wlan_boot_cb() - Wlan boot callback
+ * @kobj:      object whose directory we're creating the link in.
+ * @attr:      attribute the user is interacting with
+ * @buff:      the buffer containing the user data
+ * @count:     number of bytes in the buffer
+ *
+ * This callback is invoked when the fs is ready to start the
+ * wlan driver initialization.
+ *
+ * Return: 'count' on success or a negative error code in case of failure
+ */
+static ssize_t wlan_boot_cb(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf,
+			    size_t count)
+{
+
+	if (wlan_loader->loaded_state) {
+		pr_err("%s: wlan driver already initialized\n", __func__);
+		return -EALREADY;
+	}
+
+	if (__hdd_module_init()) {
+		pr_err("%s: wlan driver initialization failed\n", __func__);
+		return -EIO;
+	}
+
+	wlan_loader->loaded_state = MODULE_INITIALIZED;
+
+	return count;
+}
+
+/**
+ * hdd_sysfs_cleanup() - cleanup sysfs
+ *
+ * Return: None
+ *
+ */
+static void hdd_sysfs_cleanup(void)
+{
+	/* remove from group */
+	if (wlan_loader->boot_wlan_obj && wlan_loader->attr_group)
+		sysfs_remove_group(wlan_loader->boot_wlan_obj,
+				   wlan_loader->attr_group);
+
+	/* unlink the object from parent */
+	kobject_del(wlan_loader->boot_wlan_obj);
+
+	/* free the object */
+	kobject_put(wlan_loader->boot_wlan_obj);
+
+	kfree(wlan_loader->attr_group);
+	kfree(wlan_loader);
+
+	wlan_loader = NULL;
+}
+
+/**
+ * wlan_init_sysfs() - Creates the sysfs to be invoked when the fs is
+ * ready
+ *
+ * This is creates the syfs entry boot_wlan. Which shall be invoked
+ * when the filesystem is ready.
+ *
+ * QDF API cannot be used here since this function is called even before
+ * initializing WLAN driver.
+ *
+ * Return: 0 for success, errno on failure
+ */
+static int wlan_init_sysfs(void)
+{
+	int ret = -ENOMEM;
+
+	wlan_loader = kzalloc(sizeof(*wlan_loader), GFP_KERNEL);
+	if (!wlan_loader)
+		return -ENOMEM;
+
+	wlan_loader->boot_wlan_obj = NULL;
+	wlan_loader->attr_group = kzalloc(sizeof(*(wlan_loader->attr_group)),
+					  GFP_KERNEL);
+	if (!wlan_loader->attr_group)
+		goto error_return;
+
+	wlan_loader->loaded_state = 0;
+	wlan_loader->attr_group->attrs = attrs;
+
+	wlan_loader->boot_wlan_obj = kobject_create_and_add("boot_wlan",
+							    kernel_kobj);
+	if (!wlan_loader->boot_wlan_obj) {
+		pr_err("%s: sysfs create and add failed\n", __func__);
+		goto error_return;
+	}
+
+	ret = sysfs_create_group(wlan_loader->boot_wlan_obj,
+				 wlan_loader->attr_group);
+	if (ret) {
+		pr_err("%s: sysfs create group failed %d\n", __func__, ret);
+		goto error_return;
+	}
+
+	return 0;
+
+error_return:
+	hdd_sysfs_cleanup();
+
+	return ret;
+}
+
+/**
+ * wlan_deinit_sysfs() - Removes the sysfs created to initialize the wlan
+ *
+ * Return: 0 on success or errno on failure
+ */
+static int wlan_deinit_sysfs(void)
+{
+	if (!wlan_loader) {
+		hdd_err("wlan loader context is Null!");
+		return -EINVAL;
+	}
+
+	hdd_sysfs_cleanup();
+	return 0;
+}
+
+#endif /* MODULE */
+
+#ifdef MODULE
 /**
  * __hdd_module_init - Module init helper
  *
@@ -12960,7 +13036,21 @@ static int hdd_module_init(void)
 
 	return 0;
 }
+#else
+static int __init hdd_module_init(void)
+{
+	int ret = -EINVAL;
 
+	ret = wlan_init_sysfs();
+	if (ret)
+		pr_err("Failed to create sysfs entry for loading wlan");
+
+	return ret;
+}
+#endif
+
+
+#ifdef MODULE
 /**
  * hdd_module_exit() - Exit function
  *
@@ -12973,17 +13063,10 @@ static void __exit hdd_module_exit(void)
 	__hdd_module_exit();
 }
 #else
-static void wlan_hdd_boot_fn(struct work_struct *work)
+static void __exit hdd_module_exit(void)
 {
-	__hdd_module_init();
-}
-
-static int __init hdd_module_init(void)
-{
-	INIT_WORK(&boot_work, wlan_hdd_boot_fn);
-	schedule_work(&boot_work);
-
-	return 0;
+	__hdd_module_exit();
+	wlan_deinit_sysfs();
 }
 #endif
 
@@ -13775,12 +13858,8 @@ void hdd_drv_ops_inactivity_handler(unsigned long arg)
 }
 
 /* Register the module init/exit functions */
-#ifdef MODULE
 module_init(hdd_module_init);
 module_exit(hdd_module_exit);
-#else
-device_initcall(hdd_module_init);
-#endif
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Qualcomm Atheros, Inc.");

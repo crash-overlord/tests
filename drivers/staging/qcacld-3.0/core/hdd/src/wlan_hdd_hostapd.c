@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -8001,6 +8001,7 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	bool disable_fw_tdls_state = false;
 	uint8_t ignore_cac = 0;
 	uint8_t beacon_fixed_len;
+	hdd_adapter_t *sta_adapter;
 
 	ENTER();
 
@@ -8034,7 +8035,24 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	 * disconnect the STA interface first if connection or key exchange is
 	 * in progress and then start SAP interface.
 	 */
-	hdd_abort_ongoing_sta_connection(pHddCtx);
+	sta_adapter = hdd_get_sta_connection_in_progress(pHddCtx);
+	if (sta_adapter) {
+		hdd_debug("Disconnecting STA with session id: %d",
+			  sta_adapter->sessionId);
+		wlan_hdd_disconnect(sta_adapter, eCSR_DISCONNECT_REASON_DEAUTH);
+	}
+
+	/*
+	 * Reject start bss if reassoc in progress on any adapter.
+	 * sme_is_any_session_in_middle_of_roaming is for LFR2 and
+	 * hdd_is_roaming_in_progress is for LFR3
+	 */
+	if (sme_is_any_session_in_middle_of_roaming(hHal) ||
+	    hdd_is_roaming_in_progress(pHddCtx)) {
+		hdd_info("Reassociation in progress");
+		ret = -EINVAL;
+		goto ret_status;
+	}
 
 	/*
 	 * Disable Roaming on all adapters before starting bss
@@ -8699,6 +8717,7 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
 	hdd_context_t *pHddCtx = wiphy_priv(wiphy);
 	hdd_scaninfo_t *pScanInfo = NULL;
+	hdd_adapter_t *staAdapter = NULL;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
 	tSirUpdateIE updateIE;
@@ -8708,7 +8727,6 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	hdd_adapter_list_node_t *pAdapterNode = NULL;
 	hdd_adapter_list_node_t *pNext = NULL;
 	tsap_Config_t *pConfig;
-	hdd_adapter_t *staAdapter;
 
 	hdd_info("enter(%s)", netdev_name(dev));
 
@@ -8756,7 +8774,12 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	 * the STA and complete the SAP operation. STA will reconnect
 	 * after SAP stop is done.
 	 */
-	hdd_abort_ongoing_sta_connection(pHddCtx);
+	staAdapter = hdd_get_sta_connection_in_progress(pHddCtx);
+	if (staAdapter) {
+		hdd_debug("Disconnecting STA with session id: %d",
+			  staAdapter->sessionId);
+		wlan_hdd_disconnect(staAdapter, eCSR_DISCONNECT_REASON_DEAUTH);
+	}
 
 	if (pAdapter->device_mode == QDF_SAP_MODE) {
 		wlan_hdd_del_station(pAdapter);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2089,7 +2089,7 @@ void wlan_hdd_cfg80211_acs_ch_select_evt(hdd_adapter_t *adapter)
 		INIT_DELAYED_WORK(&con_sap_adapter->acs_pending_work,
 				      wlan_hdd_cfg80211_start_pending_acs);
 		/* Lets give 500ms for OBSS + START_BSS to complete */
-		queue_delayed_work(system_power_efficient_wq, &con_sap_adapter->acs_pending_work,
+		schedule_delayed_work(&con_sap_adapter->acs_pending_work,
 							msecs_to_jiffies(500));
 	}
 }
@@ -6689,7 +6689,7 @@ static int __wlan_hdd_cfg80211_wifi_logger_get_ring_data(struct wiphy *wiphy,
 				WLAN_LOG_REASON_CODE_UNUSED,
 				true, false);
 		if (QDF_STATUS_SUCCESS != status) {
-			hdd_debug("Failed to trigger bug report");
+			hdd_err("Failed to trigger bug report");
 			return -EINVAL;
 		}
 	} else {
@@ -16958,13 +16958,6 @@ static int wlan_hdd_cfg80211_connect_start(hdd_adapter_t *pAdapter,
 	qdf_mem_zero(&hdd_sta_ctx->conn_info.conn_flag,
 		     sizeof(hdd_sta_ctx->conn_info.conn_flag));
 
-	/*
-	 * Reset the ptk, gtk status flags to avoid using old/previous
-	 * connection status.
-	 */
-	hdd_sta_ctx->conn_info.gtk_installed = false;
-	hdd_sta_ctx->conn_info.ptk_installed = false;
-
 	if (pRoamProfile) {
 		hdd_station_ctx_t *pHddStaCtx;
 
@@ -18500,8 +18493,6 @@ int wlan_hdd_try_disconnect(hdd_adapter_t *pAdapter)
 			if (!rc) {
 				hdd_err("roaming comp var timed out session Id: %d",
 					pAdapter->sessionId);
-				/* Clear roaming in progress flag */
-				hdd_set_roaming_in_progress(false);
 			}
 			if (pAdapter->roam_ho_fail) {
 				INIT_COMPLETION(pAdapter->disconnect_comp_var);
@@ -18624,13 +18615,8 @@ static int wlan_hdd_reassoc_bssid_hint(hdd_adapter_t *adapter,
 		qdf_mem_copy(wext_state->req_bssId.bytes, bssid,
 			     QDF_MAC_ADDR_SIZE);
 
-		hdd_set_roaming_in_progress(true);
-
 		status = hdd_reassoc(adapter, bssid, channel,
 				      CONNECT_CMD_USERSPACE);
-		if (QDF_IS_STATUS_ERROR(status))
-			hdd_set_roaming_in_progress(false);
-
 		hdd_debug("hdd_reassoc: status: %d", status);
 	}
 	return status;
@@ -18769,8 +18755,10 @@ static int __wlan_hdd_cfg80211_connect(struct wiphy *wiphy,
 	 * Check if this is reassoc to same bssid, if reassoc is success, return
 	 */
 	status = wlan_hdd_reassoc_bssid_hint(pAdapter, req);
-	if (!status)
+	if (!status) {
+		hdd_set_roaming_in_progress(true);
 		return status;
+	}
 
 	/* Try disconnecting if already in connected state */
 	status = wlan_hdd_try_disconnect(pAdapter);
@@ -18889,8 +18877,6 @@ int wlan_hdd_disconnect(hdd_adapter_t *pAdapter, u16 reason)
 			if (!rc) {
 				hdd_err("roaming comp var timed out session Id: %d",
 					pAdapter->sessionId);
-				/* Clear roaming in progress flag */
-				hdd_set_roaming_in_progress(false);
 			}
 			if (pAdapter->roam_ho_fail) {
 				INIT_COMPLETION(pAdapter->disconnect_comp_var);

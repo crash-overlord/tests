@@ -71,9 +71,7 @@
 #define WMA_LOG_COMPLETION_TIMER 3000 /* 3 seconds */
 
 #define WMI_TLV_HEADROOM 128
-#ifdef TRACE_RECORD
 uint8_t *mac_trace_get_wma_msg_string(uint16_t wmaMsg);
-#endif
 static uint32_t g_fw_wlan_feat_caps;
 /**
  * wma_get_fw_wlan_feat_caps() - get fw feature capablity
@@ -8401,7 +8399,7 @@ QDF_STATUS wma_mc_process_msg(void *cds_context, cds_msg_t *msg)
 		qdf_mem_free(msg->bodyptr);
 		break;
 	default:
-		WMA_LOGD("Unhandled WMA message of type %d", msg->type);
+		WMA_LOGE("Unhandled WMA message of type %d", msg->type);
 		if (msg->bodyptr)
 			qdf_mem_free(msg->bodyptr);
 	}
@@ -8421,7 +8419,7 @@ void wma_log_completion_timeout(void *data)
 {
 	tp_wma_handle wma_handle;
 
-	WMA_LOGD("%s: Timeout occurred for log completion command", __func__);
+	WMA_LOGE("%s: Timeout occured for log completion command", __func__);
 
 	wma_handle = (tp_wma_handle) data;
 	if (!wma_handle)
