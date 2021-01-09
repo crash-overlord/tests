@@ -354,3 +354,4 @@ config POWERSUSPEND_DEBUG
 config DEDUCE_WAKEUP_REASONS
 	bool
 	default n
+	
