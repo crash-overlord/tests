@@ -119,3 +119,7 @@ android/configs/android-*.cfg
 
 # ignore out folder
 out/*
+sabermod64
+linaro64
+linaro32
+clang
