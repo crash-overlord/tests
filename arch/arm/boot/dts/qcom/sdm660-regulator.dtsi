@@ -97,6 +97,15 @@
 				<RPM_SMD_REGULATOR_LEVEL_TURBO>;
 			qcom,use-voltage-level;
 		};
+
+		cx_cdev: regulator-cx-cdev {
+			compatible = "qcom,regulator-cooling-device";
+			regulator-cdev-supply = <&pm660l_s3_level>;
+			regulator-levels = <RPM_SMD_REGULATOR_LEVEL_NOM
+					RPM_SMD_REGULATOR_LEVEL_RETENTION>;
+			#cooling-cells = <2>;
+		};
+
 	};
 
 	/* PM660L S5 - VDD_MX supply */
@@ -135,6 +144,15 @@
 				<RPM_SMD_REGULATOR_LEVEL_TURBO>;
 			qcom,use-voltage-level;
 		};
+
+		mx_cdev: regulator-mx-cdev {
+			compatible = "qcom,regulator-cooling-device";
+			regulator-cdev-supply = <&pm660l_s5_level>;
+			regulator-levels = <RPM_SMD_REGULATOR_LEVEL_NOM
+					RPM_SMD_REGULATOR_LEVEL_RETENTION>;
+			#cooling-cells = <2>;
+		};
+
 	};
 
 	rpm-regulator-ldoa1 {
@@ -705,83 +723,77 @@
 			qcom,cpr-up-threshold = <2>;
 			qcom,cpr-down-threshold = <2>;
 
-
 			apc0_pwrcl_vreg: regulator {
 				regulator-name = "apc0_pwrcl_corner";
 				regulator-min-microvolt = <1>;
-				regulator-max-microvolt = <12>;
+				regulator-max-microvolt = <9>;
 
 				qcom,cpr-fuse-corners = <5>;
 				qcom,cpr-fuse-combos = <40>;
 				qcom,cpr-speed-bins = <5>;
-				qcom,cpr-speed-bin-corners = <12 12 0 12 12>;
+				qcom,cpr-speed-bin-corners = <9 9 0 9 9>;
 				qcom,cpr-corners =
 					/* Speed bin 0 */
-					<12 12 12 12 12 12 12 12>,
+					<9 9 9 9 9 9 9 9>,
 
 					/* Speed bin 1 */
-					<12 12 12 12 12 12 12 12>,
+					<9 9 9 9 9 9 9 9>,
 
 					/* Speed bin 2 */
 					<0 0 0 0 0 0 0 0>,
 
 					/* Speed bin 3 */
-					<12 12 12 12 12 12 12 12>,
+					<9 9 9 9 9 9 9 9>,
 
 					/* Speed bin 4 */
-					<12 12 12 12 12 12 12 12>;
+					<9 9 9 9 9 9 9 9>;
 
 				qcom,cpr-corner-fmax-map =
 					/* Speed bin 0 */
-					<2 3 4 5 12>,
+					<2 3 4 5 9>,
 
 					/* Speed bin 1 */
-					<2 3 4 5 12>,
+					<2 3 4 5 9>,
 
 					/* Speed bin 2 */
 					<0 0 0 0 0>,
 
 					/* Speed bin 3 */
-					<2 3 4 5 12>,
+					<2 3 4 5 9>,
 
 					/* Speed bin 4 */
-					<2 3 4 5 12>;
+					<2 3 4 5 9>;
 
 				qcom,cpr-voltage-ceiling =
-					<584000 684000 684000 684000 
-					684000 684000
-					748000 748000 748000 828000
-					 1008000 1008000>;
+					< 676000   680000  684000
+					  684000  748000  828000
+					 1028000 1028000 1028000>;
 
 				qcom,cpr-voltage-floor =
-					<528000 528000 528000 528000 
-					548000 546000 546000 602000 602000 642000
-					 644000 704000>;
+					<536000  540000  548000
+					 556000  612000  672000
+					 684000  744000  804000>;
 
 				qcom,corner-frequencies =
 					/* Speed bin 0 */
-					<300000000 499200000 576000000 
-					633600000 806400000 902400000
-					1113600000 1267200000 1401600000 1536000000
-					1747200000 1881600000>,
+					<300000000  499200000  633600000
+					 902400000 1113600000 1401600000
+					1536000000 1747200000 1881600000>,
 
 					/* Speed bin 1 */
-					<300000000 499200000 576000000 
-					633600000 806400000 902400000
-					1113600000 1267200000 1401600000 1536000000
-					1747200000 1881600000>,
+					<300000000  499200000  633600000
+					 902400000 1113600000 1401600000
+					1536000000 1747200000 1881600000>,
 
 					/* Speed bin 3 */
-					<300000000 499200000 576000000 
-					633600000 806400000 902400000
-					1113600000 1267200000 1401600000 1536000000
-					1612800000 1881600000>,
+					<300000000  499200000  633600000
+					 902400000 1113600000 1401600000
+					1536000000 1747200000 1881600000>,
 
 					/* Speed bin 4 */
-					<300000000 499200000 576000000 
-					633600000 806400000 902400000
-					1113600000 1267200000 1401600000 1536000000
-					1747200000 1881600000>;
+					<300000000  499200000  633600000
+					 902400000 1113600000 1401600000
+					1536000000 1747200000 1881600000>;
 
 				qcom,allow-voltage-interpolation;
 				qcom,allow-quotient-interpolation;
@@ -812,11 +824,12 @@
 					(-21000)>;
 
 				qcom,cpr-floor-to-ceiling-max-range =
-					<32000 32000 32000 32000 32000 32000 40000 44000
-					 40000 40000 40000  40000>;
+					<32000  32000  32000
+					 32000  40000  44000
+					 40000  40000  40000>;
 			};
 		};
-	}; 
+	};
 
 	/* APC1 CPR Controller node for Gold cluster */
 	apc1_cpr: cprh-ctrl@179c4000 {
@@ -867,74 +880,72 @@
 			apc1_perfcl_vreg: regulator {
 				regulator-name = "apc1_perfcl_corner";
 				regulator-min-microvolt = <1>;
-				regulator-max-microvolt = <9>;
+				regulator-max-microvolt = <7>;
 
 				qcom,cpr-fuse-corners = <5>;
 				qcom,cpr-fuse-combos = <40>;
 				qcom,cpr-speed-bins = <5>;
-				qcom,cpr-speed-bin-corners = <9 9 0 9 9>;
+				qcom,cpr-speed-bin-corners = <7 7 0 7 7>;
 				qcom,cpr-corners =
 					/* Speed-bin 0 */
-					<9 9 9 9 9 9 9 9>,
+					<7 7 7 7 7 7 7 7>,
 
 					/* Speed-bin 1 */
-					<9 9 9 9 9 9 9 9>,
+					<7 7 7 7 7 7 7 7>,
 
 					/* Speed-bin 1 */
 					<0 0 0 0 0 0 0 0>,
 
 					/* Speed-bin 3 */
-					<9 9 9 9 9 9 9 9>,
+					<7 7 7 7 7 7 7 7>,
 
 					/* Speed-bin 4 */
-					<9 9 9 9 9 9 9 9>;
+					<7 7 7 7 7 7 7 7>;
 
 				qcom,cpr-corner-fmax-map =
 					/* Speed-bin 0 */
-					<2 3 4 6 9>,
+					<2 3 4 6 7>,
 
 					/* Speed-bin 1 */
-					<2 3 4 6 9>,
+					<2 3 4 6 7>,
 
 					/* Speed-bin 2 */
 					<0 0 0 0 0>,
 
 					/* Speed-bin 3 */
-					<2 3 4 6 9>,
+					<2 3 4 6 7>,
 
 					/* Speed-bin 4 */
-					<2 3 4 6 9>;
+					<2 3 4 6 7>;
 
 				qcom,cpr-voltage-ceiling =
-					<480000  560000  644000  
-					644000  708000  788000
-					 908000  908000 1026900>;
+					<684000  648000  748000  828000
+					 948000  948000 1028000>;
 
 				qcom,cpr-voltage-floor =
-					<360000  420000  588000  
-					596000  652000  712000
-					 744000  784000  844000>;
+					<548000  556000  612000  672000
+					 704000 744000  804000>;
 
 				qcom,corner-frequencies =
 					/* Speed bin 0 */
-					<300000000  633600000  902400000
-					 1113600000 1401600000 1747200000
-					 1958400000 2150400000 2457600000>,
+					<300000000  1113600000 1401600000
+					 1747200000 1958400000 2150400000
+					 2457600000>,
 
 					/* Speed bin 1 */
-					<300000000  633600000  902400000
-					 1113600000 1401600000 1747200000
-					 1958400000 2150400000 2208000000>,
+					<300000000  1113600000 1401600000
+					 1747200000 1958400000 2150400000
+					 2208000000>,
 
 					/* Speed bin 3 */
-					<300000000  633600000  902400000
-					 1113600000 1401600000 1747200000
-					 1804800000 2150400000 2208000000>,
+					<300000000  1113600000 1401600000
+					 1747200000 1804800000 2150400000
+					 2208000000>,
 
 					/* Speed bin 4 */
-					<300000000  633600000  902400000
-					 1113600000 1401600000 1747200000
-					 1958400000 2150400000 2208000000>;
+					<300000000  1113600000 1401600000
+					 1747200000 1958400000 2150400000
+					 2208000000>;
 
 				qcom,allow-voltage-interpolation;
 				qcom,allow-quotient-interpolation;
@@ -965,8 +976,7 @@
 					   11000>;
 
 				qcom,cpr-floor-to-ceiling-max-range =
-					<32000  33000  40000  
-					 40000  40000  40000
+					<40000  40000  40000  40000
 					 66000  66000  40000>;
 			};
 		};
