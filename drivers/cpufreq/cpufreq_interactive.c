@@ -32,8 +32,6 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
-#define CREATE_TRACE_POINTS
-#include <trace/events/cpufreq_interactive.h>
 
 struct cpufreq_interactive_policyinfo {
 	struct timer_list policy_timer;
@@ -84,7 +82,7 @@ static struct mutex sched_lock;
 static cpumask_t controlled_cpus;
 
 /* Target load.  Lower values result in higher CPU speeds. */
-#define DEFAULT_TARGET_LOAD 70
+#define DEFAULT_TARGET_LOAD 90
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
 
 #define DEFAULT_TIMER_RATE (20 * USEC_PER_MSEC)
@@ -97,7 +95,7 @@ struct cpufreq_interactive_tunables {
 	/* Hi speed to bump to from lo speed when load burst (default max) */
 	unsigned int hispeed_freq;
 	/* Go to hi speed when CPU load at or above this value. */
-#define DEFAULT_GO_HISPEED_LOAD 90
+#define DEFAULT_GO_HISPEED_LOAD 99
 	unsigned long go_hispeed_load;
 	/* Target load. Lower values result in higher CPU speeds. */
 	spinlock_t target_loads_lock;
@@ -107,7 +105,7 @@ struct cpufreq_interactive_tunables {
 	 * The minimum amount of time to spend at a frequency before we can ramp
 	 * down.
 	 */
-#define DEFAULT_MIN_SAMPLE_TIME (70 * USEC_PER_MSEC)
+#define DEFAULT_MIN_SAMPLE_TIME (80 * USEC_PER_MSEC)
 	unsigned long min_sample_time;
 	/*
 	 * The sample rate of the timer used to increase frequency
@@ -385,23 +383,22 @@ static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 
 			if (freq <= freqmin) {
 				/*
+				 * Find the lowest frequency that is higher
+				 * than freqmin.
+				 */
+				if (cpufreq_frequency_table_target(
+					    &pcpu->p_nolim, pcpu->freq_table,
+					    freqmin + 1, CPUFREQ_RELATION_L,
+					    &index))
+					break;
+				freq = pcpu->freq_table[index].frequency;
+
+				/*
 				 * If freqmax is the first frequency above
 				 * freqmin then we have already found that
 				 * this speed is fast enough.
 				 */
 				if (freq == freqmax)
-					break;
-
-			freq = pcpu->freq_table[index].frequency;
-
-			/*
-			* Find the lowest frequency that is higher
-			* than freqmin.
-			*/
-			if (cpufreq_frequency_table_target(
-					&pcpu->p_nolim, pcpu->freq_table,
-					freqmin + 1, CPUFREQ_RELATION_L,
-					&index))
 					break;
 			}
 		}
@@ -539,9 +536,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 		cpu_load = max(prev_l, pred_l);
 		pol_load = max(pol_load, cpu_load);
-		trace_cpufreq_interactive_cpuload(cpu, cpu_load, new_load_pct,
-						  prev_l, pred_l);
-
+        
 		/* save loadadjfreq for notification */
 		pcpu->loadadjfreq = max(t_prevlaf, t_predlaf);
 
@@ -551,7 +546,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 			skip_hispeed_logic = true;
 			jump_to_max = true;
 		}
-		++i;
+		i++;
 	}
 	spin_unlock(&ppol->load_lock);
 
@@ -602,9 +597,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	    new_freq > ppol->target_freq &&
 	    now - ppol->hispeed_validate_time <
 	    freq_to_above_hispeed_delay(tunables, ppol->target_freq)) {
-		trace_cpufreq_interactive_notyet(
-			max_cpu, pol_load, ppol->target_freq,
-			ppol->policy->cur, new_freq);
+
 		spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 		goto rearm;
 	}
@@ -627,9 +620,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	if (!skip_min_sample_time && new_freq < ppol->floor_freq) {
 		if (now - ppol->floor_validate_time <
 				tunables->min_sample_time) {
-			trace_cpufreq_interactive_notyet(
-				max_cpu, pol_load, ppol->target_freq,
-				ppol->policy->cur, new_freq);
+			
 			spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 			goto rearm;
 		}
@@ -657,15 +648,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 	if (ppol->target_freq == new_freq &&
 			ppol->target_freq <= ppol->policy->cur) {
-		trace_cpufreq_interactive_already(
-			max_cpu, pol_load, ppol->target_freq,
-			ppol->policy->cur, new_freq);
+		
 		spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 		goto rearm;
 	}
 
-	trace_cpufreq_interactive_target(max_cpu, pol_load, ppol->target_freq,
-					 ppol->policy->cur, new_freq);
+	
 
 	ppol->target_freq = new_freq;
 	spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
@@ -739,9 +727,9 @@ static int cpufreq_interactive_speedchange_task(void *data)
 				__cpufreq_driver_target(ppol->policy,
 							ppol->target_freq,
 							CPUFREQ_RELATION_H);
-			trace_cpufreq_interactive_setspeed(cpu,
-						     ppol->target_freq,
-						     ppol->policy->cur);
+//			trace_cpufreq_interactive_setspeed(cpu,
+//						     ppol->target_freq,
+//						     ppol->policy->cur);
 			up_read(&ppol->enable_sem);
 		}
 	}
@@ -837,7 +825,6 @@ static enum hrtimer_restart cpufreq_interactive_hrtimer(struct hrtimer *timer)
 		return 0;
 	}
 	cpu = ppol->notif_cpu;
-	trace_cpufreq_interactive_load_change(cpu);
 	del_timer(&ppol->policy_timer);
 	del_timer(&ppol->policy_slack_timer);
 	cpufreq_interactive_timer(cpu);
@@ -998,13 +985,23 @@ static ssize_t store_above_hispeed_delay(
 	struct cpufreq_interactive_tunables *tunables,
 	const char *buf, size_t count)
 {
-	int ntokens;
+	int ntokens, i;
 	unsigned int *new_above_hispeed_delay = NULL;
 	unsigned long flags;
 
 	new_above_hispeed_delay = get_tokenized_data(buf, &ntokens);
 	if (IS_ERR(new_above_hispeed_delay))
 		return PTR_RET(new_above_hispeed_delay);
+
+    /* Make sure frequencies are in ascending order. */
+	for (i = 3; i < ntokens; i += 2) {
+		if (new_above_hispeed_delay[i] <=
+		    new_above_hispeed_delay[i - 2]) {
+			kfree(new_above_hispeed_delay);
+			return -EINVAL;
+		}
+	}
+
 
 	spin_lock_irqsave(&tunables->above_hispeed_delay_lock, flags);
 	if (tunables->above_hispeed_delay != default_above_hispeed_delay)
@@ -1176,12 +1173,10 @@ static ssize_t store_boost(struct cpufreq_interactive_tunables *tunables,
 	tunables->boost_val = val;
 
 	if (tunables->boost_val) {
-		trace_cpufreq_interactive_boost("on");
 		if (!tunables->boosted)
 			cpufreq_interactive_boost(tunables);
 	} else {
 		tunables->boostpulse_endtime = ktime_to_us(ktime_get());
-		trace_cpufreq_interactive_unboost("off");
 	}
 
 	return count;
@@ -1199,7 +1194,6 @@ static ssize_t store_boostpulse(struct cpufreq_interactive_tunables *tunables,
 
 	tunables->boostpulse_endtime = ktime_to_us(ktime_get()) +
 		tunables->boostpulse_duration_val;
-	trace_cpufreq_interactive_boost("pulse");
 	if (!tunables->boosted)
 		cpufreq_interactive_boost(tunables);
 	return count;
