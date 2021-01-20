@@ -749,7 +749,6 @@ const char * const vmstat_text[] = {
 	"nr_shmem",
 	"nr_dirtied",
 	"nr_written",
-	"nr_ion_heap",
 	"nr_pages_scanned",
 
 #ifdef CONFIG_NUMA
@@ -1446,7 +1445,7 @@ static bool need_update(int cpu)
 
 void quiet_vmstat(void)
 {
-	if (unlikely(system_state != SYSTEM_RUNNING))
+	if (system_state != SYSTEM_RUNNING)
 		return;
 
 	/*
@@ -1456,7 +1455,7 @@ void quiet_vmstat(void)
 	if (cpumask_test_and_set_cpu(smp_processor_id(), cpu_stat_off))
 		return;
 
-	if (likely(!need_update(smp_processor_id())))
+	if (!need_update(smp_processor_id()))
 		return;
 
 	/*
