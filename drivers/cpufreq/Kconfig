@@ -164,9 +164,6 @@ config CPU_FREQ_DEFAULT_GOV_NEBULA
 	  
 endchoice
 
-          
-endchoice
-
 config CPU_FREQ_GOV_DARKNESS
  	tristate "'darkness' cpufreq policy governor"
  	help

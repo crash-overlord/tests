@@ -35,9 +35,7 @@ LIST_HEAD(cpuidle_detected_devices);
 static int enabled_devices;
 static int off __read_mostly;
 static int initialized __read_mostly;
-
-static void cpuidle_set_idle_cpu(unsigned int cpu);
-static void cpuidle_clear_idle_cpu(unsigned int cpu);
+static atomic_t idle_cpus = ATOMIC_INIT(0);
 
 int cpuidle_disabled(void)
 {
@@ -111,6 +109,32 @@ void cpuidle_use_deepest_state(bool enable)
 	if (dev)
 		dev->use_deepest_state = enable;
 	preempt_enable();
+}
+
+static void set_uds_callback(void *info)
+{
+	bool enable = *(bool *)info;
+
+	cpuidle_use_deepest_state(enable);
+}
+
+/**
+ * cpuidle_use_deepest_state_mask - Set use_deepest_state on specific CPUs.
+ * @target: cpumask of CPUs to update use_deepest_state on.
+ * @enable: whether to enforce the deepest idle state on those CPUs.
+ */
+int cpuidle_use_deepest_state_mask(const struct cpumask *target, bool enable)
+{
+	bool *info = kmalloc(sizeof(bool), GFP_KERNEL);
+
+	if (!info)
+		return -ENOMEM;
+
+	*info = enable;
+	on_each_cpu_mask(target, set_uds_callback, info, 1);
+	kfree(info);
+
+	return 0;
 }
 
 /**
@@ -211,13 +235,13 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 	/* Take note of the planned idle state. */
 	sched_idle_set_state(target_state, index);
 
-//	trace_cpu_idle_rcuidle(index, dev->cpu);
-	time_start = ktime_get();
+	trace_cpu_idle_rcuidle(index, dev->cpu);
+	time_start = ns_to_ktime(local_clock());
 
 	stop_critical_timings();
-	cpuidle_set_idle_cpu(dev->cpu);
+	atomic_or(BIT(dev->cpu), &idle_cpus);
 	entered_state = target_state->enter(dev, drv, index);
-	cpuidle_clear_idle_cpu(dev->cpu);
+	atomic_andnot(BIT(dev->cpu), &idle_cpus);
 	start_critical_timings();
 
 	sched_clock_idle_wakeup_event();
@@ -237,17 +261,17 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 	if (!cpuidle_state_is_coupled(drv, index))
 		local_irq_enable();
 
+	diff = ktime_us_delta(time_end, time_start);
+	if (diff > INT_MAX)
+		diff = INT_MAX;
+
+	dev->last_residency = (int) diff;
+
 	if (entered_state >= 0) {
-		/*
-		 * Update cpuidle counters
-		 * This can be moved to within driver enter routine,
+		/* Update cpuidle counters */
+		/* This can be moved to within driver enter routine
 		 * but that results in multiple copies of same code.
 		 */
-		diff = ktime_to_us(ktime_sub(time_end, time_start));
-		if (diff > INT_MAX)
-			diff = INT_MAX;
-
-		dev->last_residency = (int)diff;
 		dev->states_usage[entered_state].time += dev->last_residency;
 		dev->states_usage[entered_state].usage++;
 	} else {
@@ -637,6 +661,12 @@ int cpuidle_register(struct cpuidle_driver *drv,
 EXPORT_SYMBOL_GPL(cpuidle_register);
 
 #ifdef CONFIG_SMP
+
+static void smp_callback(void *v)
+{
+	/* we already woke the CPU up, nothing more to do */
+}
+
 /*
  * This function gets called when a part of the kernel has a new latency
  * requirement.  This means we need to get only those processors out of their
@@ -647,19 +677,19 @@ static int cpuidle_latency_notify(struct notifier_block *b,
 		unsigned long l, void *v)
 {
 	static unsigned long prev_latency = ULONG_MAX;
-	unsigned long cpus;
-	struct cpumask *idle_mask = to_cpumask(&cpus);
+
+	if (l < prev_latency) {
+		const unsigned long cpus = atomic_read(&idle_cpus);
+		struct cpumask *idle_mask = to_cpumask(&cpus);
+
+		cpumask_andnot(idle_mask, idle_mask, cpu_isolated_mask);
+		preempt_disable();
+		smp_call_function_many(idle_mask, smp_callback, NULL, false);
+		preempt_enable();
 	}
 
-	if (!update_mask)
-		return NOTIFY_OK;
+	prev_latency = l;
 
-	update_mask &= atomic_read(&idle_cpu_mask);
-	update_mask &= ~*cpumask_bits(cpu_isolated_mask);
-
-	/* Notifier is called with preemption disabled */
-	if (update_mask)
-		arch_send_wakeup_ipi_mask(to_cpumask(&update_mask));
 	return NOTIFY_OK;
 }
 
@@ -674,14 +704,6 @@ static inline void latency_notifier_init(struct notifier_block *n)
 
 #else /* CONFIG_SMP */
 
-static void cpuidle_set_idle_cpu(unsigned int cpu)
-{
-}
-
-static void cpuidle_clear_idle_cpu(unsigned int cpu)
-{
-}
-
 #define latency_notifier_init(x) do { } while (0)
 
 #endif /* CONFIG_SMP */
@@ -693,6 +715,7 @@ static int __init cpuidle_init(void)
 {
 	int ret;
 
+	BUILD_BUG_ON(NR_CPUS > sizeof(idle_cpus.counter) * 8);
 	if (cpuidle_disabled())
 		return -ENODEV;
 
