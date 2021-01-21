@@ -102,13 +102,7 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	  you to get a full dynamic cpu frequency capable system by simply
 	  loading your cpufreq low-level hardware driver, using the
 	  'interactive' governor for latency-sensitive workloads.
-	
-config CPU_FREQ_DEFAULT_GOV_DANCEDANCE
-        bool "dancedance"
-        select CPU_FREQ_GOV_DANCEDANCE
-        help
-          Use the CPUFreq governor 'dancedance' as default.
-          
+
           
 endchoice
 
@@ -120,12 +114,6 @@ config CPU_FREQ_GOV_DARKNESS
 
 	  If in doubt, say N.
 
-config CPU_FREQ_GOV_BIOSHOCK
- 	tristate "'bioshock' cpufreq bioshock"
-	depends on CPU_FREQ
-	help
-	  'bioshock' - More aggressive version of conservative
-
 
 config CPU_FREQ_GOV_INTERACTIVEX
 	tristate "'interactivex' governor"
@@ -136,13 +124,6 @@ config CPU_FREQ_GOV_INTERACTIVEX
 	  If in doubt, say Y.
 	  
 
-config CPU_FREQ_GOV_DANCEDANCE
-        tristate "'dancedance' cpufreq governor"
-        depends on CPU_FREQ
-        help
-          dancedance' - a "smart" optimized governor!
-          If in doubt, say N.
-          
           
 config CPU_FREQ_GOV_ZZMOOVE
         tristate "'Zzmoove' cpufreq governor"
@@ -227,6 +208,30 @@ config CPU_FREQ_GOV_CONSERVATIVE
 	  For details, take a look at linux/Documentation/cpu-freq.
 
 	  If in doubt, say N.
+
+	  
+	  
+config CPU_FREQ_GOV_INTELLIACTIVE
+	tristate "'intelliactive' governor"
+	help
+	  This cpufreq governor sets the frequency statically to the
+	  highest available CPU frequency.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cpufreq_intelliactive.
+
+	  If in doubt, say Y.
+	  
+	  
+	  
+config CPU_FREQ_GOV_WAVE
+	tristate "'wave' cpufreq governor"
+	depends on CPU_FREQ
+	
+config CPU_FREQ_GOV_NIGHTMARE
+	tristate "'nightmare' cpufreq governor"
+	depends on CPU_FREQ
+	
 
 config CPU_BOOST
 	tristate "Event base short term CPU freq boost"
