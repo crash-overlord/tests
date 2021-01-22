@@ -160,6 +160,10 @@ int __do_page_cache_readahead(struct address_space *mapping, struct file *filp,
 	int page_idx;
 	int ret = 0;
 	loff_t isize = i_size_read(inode);
+    
+if (nr_to_read < (VM_MIN_READAHEAD * 1024) / PAGE_SIZE)
+		goto out;
+
 
 	if (isize == 0)
 		goto out;

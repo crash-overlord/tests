@@ -29,6 +29,9 @@ mmu-$(CONFIG_MMU)	:= gup.o highmem.o memory.o mincore.o \
 			   mlock.o mmap.o mprotect.o mremap.o msync.o rmap.o \
 			   vmalloc.o pagewalk.o pgtable-generic.o
 
+ifdef CONFIG_MM_EVENT_STAT
+mmu-$(CONFIG_MMU)	+= mm_event.o
+endif
 ifdef CONFIG_CROSS_MEMORY_ATTACH
 mmu-$(CONFIG_MMU)	+= process_vm_access.o
 endif
@@ -104,4 +107,7 @@ obj-$(CONFIG_FRAME_VECTOR) += frame_vector.o
 obj-$(CONFIG_PROCESS_RECLAIM)	+= process_reclaim.o
 obj-$(CONFIG_HARDENED_USERCOPY) += usercopy.o
 
-CFLAGS_kmemleak.o += -DCONFIG_DEBUG_FS
+# Squeeze a little bit more juice
+ccflags-y := -O3
+ccflags-y += $(call cc-option, -g0)
+ccflags-y += $(call cc-option, -Os)
