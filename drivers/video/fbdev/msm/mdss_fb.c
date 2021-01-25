@@ -49,6 +49,7 @@
 #include <linux/mdss_io_util.h>
 #include <linux/wakelock.h>
 #include <linux/devfreq_boost.h>
+#include <linux/pm_qos.h>
 #include <sync.h>
 #include <sw_sync.h>
 
@@ -575,16 +576,11 @@ static void __mdss_fb_idle_notify_work(struct work_struct *work)
 
 	/* Notify idle-ness here */
 	pr_debug("Idle timeout %dms expired!\n", mfd->idle_time);
-
-	mfd->idle_state = MDSS_FB_IDLE;
-	/*
-	 * idle_notify node events are used to reduce MDP load when idle,
-	 * this is not needed for command mode panels.
-	 */
-	if (mfd->idle_time && mfd->panel.type != MIPI_CMD_PANEL)
+	if (mfd->idle_time)
 		sysfs_notify(&mfd->fbi->dev->kobj, NULL, "idle_notify");
-	sysfs_notify(&mfd->fbi->dev->kobj, NULL, "idle_state");
+	mfd->idle_state = MDSS_FB_IDLE;
 }
+
 
 static ssize_t mdss_fb_get_fps_info(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -644,26 +640,6 @@ static ssize_t mdss_fb_get_idle_notify(struct device *dev,
 		work_busy(&mfd->idle_notify_work.work) ? "no" : "yes");
 
 	return ret;
-}
-
-static ssize_t mdss_fb_get_idle_state(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct fb_info *fbi = dev_get_drvdata(dev);
-	struct msm_fb_data_type *mfd = fbi->par;
-	const char *state_strs[] = {
-		[MDSS_FB_NOT_IDLE] = "active",
-		[MDSS_FB_IDLE_TIMER_RUNNING] = "pending",
-		[MDSS_FB_IDLE] = "idle",
-	};
-	int state = mfd->idle_state;
-	const char *s;
-	if (state < ARRAY_SIZE(state_strs) && state_strs[state])
-		s = state_strs[state];
-	else
-		s = "invalid";
-
-	return scnprintf(buf, PAGE_SIZE, "%s\n", s);
 }
 
 static ssize_t mdss_fb_get_panel_info(struct device *dev,
@@ -1404,7 +1380,6 @@ static DEVICE_ATTR(show_blank_event, S_IRUGO, mdss_mdp_show_blank_event, NULL);
 static DEVICE_ATTR(idle_time, S_IRUGO | S_IWUSR | S_IWGRP,
 	mdss_fb_get_idle_time, mdss_fb_set_idle_time);
 static DEVICE_ATTR(idle_notify, S_IRUGO, mdss_fb_get_idle_notify, NULL);
-static DEVICE_ATTR(idle_state, S_IRUGO, mdss_fb_get_idle_state, NULL);
 static DEVICE_ATTR(msm_fb_panel_info, S_IRUGO, mdss_fb_get_panel_info, NULL);
 static DEVICE_ATTR(msm_fb_src_split_info, S_IRUGO, mdss_fb_get_src_split_info,
 	NULL);
@@ -1431,7 +1406,6 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_show_blank_event.attr,
 	&dev_attr_idle_time.attr,
 	&dev_attr_idle_notify.attr,
-	&dev_attr_idle_state.attr,
 	&dev_attr_msm_fb_panel_info.attr,
 	&dev_attr_msm_fb_src_split_info.attr,
 	&dev_attr_msm_fb_thermal_level.attr,
@@ -2219,7 +2193,6 @@ static struct platform_driver mdss_fb_driver = {
 		.name = "mdss_fb",
 		.of_match_table = mdss_fb_dt_match,
 		.pm = &mdss_fb_pm_ops,
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 
@@ -3693,18 +3666,14 @@ static int __mdss_fb_sync_buf_done_callback(struct notifier_block *p,
 			ret = __mdss_fb_wait_for_fence_sub(sync_pt_data,
 				sync_pt_data->temp_fen, fence_cnt);
 		}
-		if (mfd->idle_time) {
-			if (!mod_delayed_work(system_wq,
+		if (mfd->idle_time && !mod_delayed_work(system_wq,
 					&mfd->idle_notify_work,
 					msecs_to_jiffies(mfd->idle_time)))
-				pr_debug("fb%d: restarted idle work\n",
-						mfd->index);
-			mfd->idle_state = MDSS_FB_IDLE_TIMER_RUNNING;
-		} else {
-			mfd->idle_state = MDSS_FB_IDLE;
-		}
+			pr_debug("fb%d: restarted idle work\n",
+					mfd->index);
 		if (ret == -ETIME)
 			ret = NOTIFY_BAD;
+		mfd->idle_state = MDSS_FB_IDLE_TIMER_RUNNING;
 		break;
 	case MDP_NOTIFY_FRAME_FLUSHED:
 		pr_debug("%s: frame flushed\n", sync_pt_data->fence_name);
@@ -4350,14 +4319,9 @@ static int __mdss_fb_display_thread(void *data)
 				mfd->index);
 
 	while (1) {
-		ret = wait_event_interruptible(mfd->commit_wait_q,
+		wait_event(mfd->commit_wait_q,
 				(atomic_read(&mfd->commits_pending) ||
 				 kthread_should_stop()));
-
-		if (ret) {
-			pr_info("%s: interrupted", __func__);
-			continue;
-		}
 
 		if (kthread_should_stop())
 			break;
@@ -4563,7 +4527,7 @@ static int mdss_fb_set_par(struct fb_info *info)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 	struct fb_var_screeninfo *var = &info->var;
-	int old_imgType, old_format;
+	int old_imgType, old_format, out_format;
 	int ret = 0;
 
 	ret = mdss_fb_pan_idle(mfd);
@@ -4646,8 +4610,10 @@ static int mdss_fb_set_par(struct fb_info *info)
 		mfd->fbi->fix.smem_len = PAGE_ALIGN(mfd->fbi->fix.line_length *
 				mfd->fbi->var.yres) * mfd->fb_page;
 
-	old_format = mdss_grayscale_to_mdp_format(var->grayscale);
-	if (!IS_ERR_VALUE(old_format)) {
+	old_format = mfd->panel_info->out_format;
+	out_format = mdss_grayscale_to_mdp_format(var->grayscale);
+	if (!IS_ERR_VALUE(out_format)) {
+		mfd->panel_info->out_format = out_format;
 		if (old_format != mfd->panel_info->out_format)
 			mfd->panel_reconfig = true;
 	}
@@ -5131,84 +5097,116 @@ err:
 }
 
 static int __mdss_fb_copy_destscaler_data(struct fb_info *info,
-		struct mdp_layer_commit *commit,
-		struct mdp_destination_scaler_data *ds_data,
-		struct mdp_scale_data_v2 *scale_data)
+		struct mdp_layer_commit *commit)
 {
 	int    i = 0;
 	int    ret = 0;
+	u32    data_size;
 	struct mdp_destination_scaler_data __user *ds_data_user;
+	struct mdp_destination_scaler_data *ds_data = NULL;
 	void __user *scale_data_user;
+	struct mdp_scale_data_v2 *scale_data = NULL;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 	struct mdss_data_type *mdata;
 
 	if (!mfd || !mfd->mdp.private1) {
 		pr_err("mfd is NULL or operation not permitted\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
 	mdata = mfd_to_mdata(mfd);
 	if (!mdata) {
 		pr_err("mdata is NULL or not initialized\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
 	if (commit->commit_v1.dest_scaler_cnt >
 			mdata->scaler_off->ndest_scalers) {
 		pr_err("Commit destination scaler cnt larger than HW setting, commit cnt=%d\n",
 				commit->commit_v1.dest_scaler_cnt);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
 	ds_data_user = (struct mdp_destination_scaler_data *)
 		commit->commit_v1.dest_scaler;
-	ret = copy_from_user(ds_data, ds_data_user,
-		commit->commit_v1.dest_scaler_cnt * sizeof(*ds_data));
+	data_size = commit->commit_v1.dest_scaler_cnt *
+		sizeof(struct mdp_destination_scaler_data);
+	ds_data = kzalloc(data_size, GFP_KERNEL);
+	if (!ds_data) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	ret = copy_from_user(ds_data, ds_data_user, data_size);
 	if (ret) {
 		pr_err("dest scaler data copy from user failed\n");
-		return ret;
+		goto err;
 	}
 
 	commit->commit_v1.dest_scaler = ds_data;
 
 	for (i = 0; i < commit->commit_v1.dest_scaler_cnt; i++) {
-		if (!ds_data[i].scale)
-			continue;
+		scale_data = NULL;
 
-		scale_data_user = to_user_ptr(ds_data[i].scale);
-		ds_data[i].scale = to_user_u64(&scale_data[i]);
-		if (ds_data[i].flags & (MDP_DESTSCALER_SCALE_UPDATE |
-					MDP_DESTSCALER_ENHANCER_UPDATE)) {
-			ret = copy_from_user(scale_data + i, scale_data_user,
-					     sizeof(*scale_data));
+		if (ds_data[i].scale) {
+			scale_data_user = to_user_ptr(ds_data[i].scale);
+			data_size = sizeof(struct mdp_scale_data_v2);
+
+			scale_data = kzalloc(data_size, GFP_KERNEL);
+			if (!scale_data) {
+				ds_data[i].scale = 0;
+				ret = -ENOMEM;
+				goto err;
+			}
+
+			ds_data[i].scale = to_user_u64(scale_data);
+		}
+
+		if (scale_data && (ds_data[i].flags &
+					(MDP_DESTSCALER_SCALE_UPDATE |
+					MDP_DESTSCALER_ENHANCER_UPDATE))) {
+			ret = copy_from_user(scale_data, scale_data_user,
+					data_size);
 			if (ret) {
 				pr_err("scale data copy from user failed\n");
-				return ret;
+				kfree(scale_data);
+				goto err;
 			}
-		} else {
-			memset(scale_data + i, 0, sizeof(*scale_data));
 		}
+	}
+
+	return ret;
+
+err:
+	if (ds_data) {
+		for (i--; i >= 0; i--) {
+			scale_data = to_user_ptr(ds_data[i].scale);
+			kfree(scale_data);
+		}
+		kfree(ds_data);
 	}
 
 	return ret;
 }
 
-static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
+static int __mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	unsigned long *argp, struct file *file)
 {
 	int ret, i = 0, j = 0, rc;
 	struct mdp_layer_commit  commit;
 	u32 buffer_size, layer_count;
-	struct mdp_input_layer *layer, layer_list[MAX_LAYER_COUNT];
+	struct mdp_input_layer *layer, *layer_list = NULL;
 	struct mdp_input_layer __user *input_layer_list;
-	struct mdp_output_layer output_layer;
+	struct mdp_output_layer *output_layer = NULL;
 	struct mdp_output_layer __user *output_layer_user;
+	struct mdp_destination_scaler_data *ds_data = NULL;
 	struct mdp_destination_scaler_data __user *ds_data_user;
 	struct msm_fb_data_type *mfd;
 	struct mdss_overlay_private *mdp5_data = NULL;
 	struct mdss_data_type *mdata;
-	struct mdp_destination_scaler_data ds_data[2];
-	struct mdp_scale_data_v2 scale_data[2];
 
 	ret = copy_from_user(&commit, argp, sizeof(struct mdp_layer_commit));
 	if (ret) {
@@ -5239,13 +5237,20 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 
 	output_layer_user = commit.commit_v1.output_layer;
 	if (output_layer_user) {
-		ret = copy_from_user(&output_layer, output_layer_user,
-				     sizeof(output_layer));
+		buffer_size = sizeof(struct mdp_output_layer);
+		output_layer = kzalloc(buffer_size, GFP_KERNEL);
+		if (!output_layer) {
+			pr_err("unable to allocate memory for output layer\n");
+			return -ENOMEM;
+		}
+
+		ret = copy_from_user(output_layer,
+			output_layer_user, buffer_size);
 		if (ret) {
 			pr_err("layer list copy from user failed\n");
 			goto err;
 		}
-		commit.commit_v1.output_layer = &output_layer;
+		commit.commit_v1.output_layer = output_layer;
 	}
 
 	layer_count = commit.commit_v1.input_layer_cnt;
@@ -5257,6 +5262,13 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 		goto err;
 	} else if (layer_count) {
 		buffer_size = sizeof(struct mdp_input_layer) * layer_count;
+		layer_list = kzalloc(buffer_size, GFP_KERNEL);
+		if (!layer_list) {
+			pr_err("unable to allocate memory for layers\n");
+			ret = -ENOMEM;
+			goto err;
+		}
+
 		ret = copy_from_user(layer_list, input_layer_list, buffer_size);
 		if (ret) {
 			pr_err("layer list copy from user failed\n");
@@ -5304,12 +5316,12 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 			ret = -EPERM;
 			goto err;
 		}
-		ret = __mdss_fb_copy_destscaler_data(info, &commit, ds_data,
-						     scale_data);
+		ret = __mdss_fb_copy_destscaler_data(info, &commit);
 		if (ret) {
 			pr_err("copy dest scaler failed\n");
 			goto err;
 		}
+		ds_data = commit.commit_v1.dest_scaler;
 	}
 
 	ATRACE_BEGIN("ATOMIC_COMMIT");
@@ -5339,7 +5351,7 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 
 	if (output_layer_user) {
 		rc = copy_to_user(&output_layer_user->buffer.fence,
-			&output_layer.buffer.fence,
+			&output_layer->buffer.fence,
 			sizeof(int));
 
 		if (rc)
@@ -5352,7 +5364,36 @@ err:
 		layer_list[i].scale = NULL;
 		mdss_mdp_free_layer_pp_info(&layer_list[i]);
 	}
+	kfree(layer_list);
+	kfree(output_layer);
+	if (ds_data) {
+		for (i = 0; i < commit.commit_v1.dest_scaler_cnt; i++)
+			kfree(to_user_ptr(ds_data[i].scale));
+		kfree(ds_data);
+	}
 
+	return ret;
+}
+
+int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
+	unsigned long *argp, struct file *file)
+{
+	/*
+	 * Optimistically assume the current task won't migrate to another CPU
+	 * and restrict the current CPU to shallow idle states so that it won't
+	 * take too long to finish running the ioctl whenever the ioctl runs a
+	 * command that sleeps, such as for an "atomic" commit.
+	 */
+	struct pm_qos_request req = {
+		.type = PM_QOS_REQ_AFFINE_CORES,
+		.cpus_affine = ATOMIC_INIT(BIT(raw_smp_processor_id()))
+	};
+	int ret;
+ 
+	pm_qos_add_request(&req, PM_QOS_CPU_DMA_LATENCY, 100);
+	ret = __mdss_fb_atomic_commit_ioctl(info, argp, file);
+	pm_qos_remove_request(&req);
+ 
 	return ret;
 }
 
@@ -5582,9 +5623,6 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = mdss_fb_mode_switch(mfd, dsi_mode);
 		break;
 	case MSMFB_ATOMIC_COMMIT:
- 		if (time_before(jiffies, last_input_time + msecs_to_jiffies(1000))) {
-		devfreq_boost_kick(DEVFREQ_MSM_CPUBW);
-		}
 		ret = mdss_fb_atomic_commit_ioctl(info, argp, file);
 		break;
 

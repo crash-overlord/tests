@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -187,7 +187,7 @@ static bool ocr_enabled;
 static bool ocr_nodes_called;
 static bool ocr_probed;
 static bool ocr_reg_init_defer;
-static bool hotplug_enabled;
+static bool hotplug_enabled = 0;
 static bool interrupt_mode_enable;
 static bool msm_thermal_probed;
 static bool gfx_crit_phase_ctrl_enabled;
@@ -3029,7 +3029,6 @@ static void retry_hotplug(struct work_struct *work)
 	mutex_unlock(&core_control_mutex);
 }
 
-#ifdef CONFIG_SMP
 static void __ref do_core_control(int temp)
 {
 	int i = 0;
@@ -3259,22 +3258,6 @@ static __ref int do_hotplug(void *data)
 
 	return ret;
 }
-#else
-static void __ref do_core_control(int temp)
-{
-	return;
-}
-
-static __ref int do_hotplug(void *data)
-{
-	return 0;
-}
-
-static int __ref update_offline_cores(int val)
-{
-	return 0;
-}
-#endif
 
 static int do_gfx_phase_cond(void)
 {
@@ -6314,7 +6297,7 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 		struct platform_device *pdev)
 {
 
-	int _cpu = 0, err = 0;
+	int _cpu = 0, err = 0, sensor_name_len = 0;
 	struct device_node *cpu_node = NULL, *limits = NULL, *tsens = NULL;
 	char *key = NULL;
 	struct device_node *node = pdev->dev.of_node;
@@ -6372,8 +6355,9 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 			err = -ENOMEM;
 			goto fetch_mitig_exit;
 		}
-		strscpy((char *)cpus[_cpu].sensor_type, sensor_name,
-			sizeof(cpus[_cpu].sensor_type));
+		sensor_name_len = strlen(sensor_name);
+		strlcpy((char *) cpus[_cpu].sensor_type, sensor_name,
+			sensor_name_len + 1);
 		create_alias_name(_cpu, limits, pdev);
 	}
 
