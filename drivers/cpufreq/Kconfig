@@ -111,6 +111,7 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	  you to get a full dynamic cpu frequency capable system by simply
 	  loading your cpufreq low-level hardware driver, using the
 	  'interactive' governor for latency-sensitive workloads.
+	  
 config CPU_FREQ_DEFAULT_GOV_ZZMOOVE
 	bool "zzmoove"
 	select CPU_FREQ_GOV_ZZMOOVE
@@ -119,6 +120,7 @@ config CPU_FREQ_DEFAULT_GOV_ZZMOOVE
 	  Use the CPUFreq governor 'zzmoove' as default, using predefined
 	  frequency lookup tables and optimized scaling triggers instead of
 	  % frequency steps to get smooth up/downscaling dependant on CPU load.
+	  
 config CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
 	bool "schedutil"
 	depends on SMP
@@ -147,11 +149,7 @@ config CPU_FREQ_DEFAULT_GOV_BLU_SCHEDUTIL
 	  Use the 'blu_schedutil' CPUFreq governor by default. If unsure,
 	  have a look at the help section of that governor. The fallback
 	  governor will be 'performance'.
-	  
-config CPU_FREQ_DEFAULT_GOV_DARKNESSV5
-    bool "darknessv5"
-    select CPU_FREQ_GOV_DARKNESSV5
-    help 
+
         
 config CPU_FREQ_DEFAULT_GOV_NEBULA
 	bool "nebula"
@@ -162,7 +160,17 @@ config CPU_FREQ_DEFAULT_GOV_NEBULA
 	  loading your cpufreq low-level hardware driver, using the
 	  'nebula' governor for latency-sensitive workloads.
 	  
+	  
 endchoice
+
+config CPU_FREQ_GOV_SCHEDUTIL
+	tristate "schedutil"
+	depends on SMP
+	select CPU_FREQ_GOV_PERFORMANCE
+	help
+	  Use the 'schedutil' CPUFreq governor by default. If unsure,
+	  have a look at the help section of that governor. The fallback
+	  governor will be 'performance'.
 
 config CPU_FREQ_GOV_DARKNESS
  	tristate "'darkness' cpufreq policy governor"
@@ -269,25 +277,8 @@ config CPU_FREQ_GOV_CONSERVATIVE
 
 	  
 	  
-config CPU_FREQ_GOV_INTELLIACTIVE
-	tristate "'intelliactive' governor"
-	help
-	  This cpufreq governor sets the frequency statically to the
-	  highest available CPU frequency.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_intelliactive.
-
-	  If in doubt, say Y.
-	  
-	  
-	  
 config CPU_FREQ_GOV_WAVE
 	tristate "'wave' cpufreq governor"
-	depends on CPU_FREQ
-	
-config CPU_FREQ_GOV_NIGHTMARE
-	tristate "'nightmare' cpufreq governor"
 	depends on CPU_FREQ
 	
 
@@ -329,9 +320,6 @@ config CPU_FREQ_GOV_ALUCARDSCHED
 
  	  If in doubt, say N.
  	  
-config CPU_FREQ_GOV_DARKNESSV5
-	tristate "'darknessv5' cpufreq governor"
-        depends on CPU_FREQ
         
 config CPU_FREQ_GOV_NEBULA
 	tristate "'nebula' cpufreq policy governor"
