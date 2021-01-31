@@ -507,7 +507,7 @@ static struct clk_rcg2 blsp2_qup1_i2c_apps_clk_src = {
 		.ops = &clk_rcg2_ops,
 		VDD_DIG_FMAX_MAP2(
 				LOWER, 19200000,
-				LOW, 80000000),
+				LOW,850000000),
 	},
 };
 

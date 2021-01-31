@@ -426,14 +426,19 @@ static inline int clk_osm_read_reg(struct clk_osm *c, u32 offset)
 	return readl_relaxed((char *)c->vbases[OSM_BASE] + offset);
 }
 
+static inline int clk_osm_read_reg_no_log(struct clk_osm *c, u32 offset)
+{
+	return readl_relaxed_no_log((char *)c->vbases[OSM_BASE] + offset);
+}
+
 static inline int clk_osm_mb(struct clk_osm *c, int base)
 {
-	return readl_relaxed((char *)c->vbases[base] + VERSION_REG);
+	return readl_relaxed_no_log((char *)c->vbases[base] + VERSION_REG);
 }
 
 static inline int clk_osm_acd_mb(struct clk_osm *c)
 {
-	return readl_relaxed((char *)c->vbases[ACD_BASE] +
+	return readl_relaxed_no_log((char *)c->vbases[ACD_BASE] +
 				    ACD_HW_VERSION);
 }
 
@@ -2517,7 +2522,7 @@ static u64 clk_osm_get_cpu_cycle_counter(int cpu)
 	}
 
 	spin_lock_irqsave(&c->lock, flags);
-	val = clk_osm_read_reg(c, OSM_CYCLE_COUNTER_STATUS_REG);
+	val = clk_osm_read_reg_no_log(c, OSM_CYCLE_COUNTER_STATUS_REG);
 
 	if (val < c->prev_cycle_counter) {
 		/* Handle counter overflow */
@@ -3115,8 +3120,8 @@ static int clk_osm_acd_init(struct clk_osm *c)
 
 static unsigned long init_rate = 300000000;
 static unsigned long osm_clk_init_rate = 200000000;
-static unsigned long pwrcl_boot_rate = 1401600000;
-static unsigned long perfcl_boot_rate = 1747200000;
+static unsigned long pwrcl_boot_rate = 1747200000;
+static unsigned long perfcl_boot_rate = 2150400000;
 
 static int clk_cpu_osm_driver_probe(struct platform_device *pdev)
 {
@@ -3386,10 +3391,6 @@ static int clk_cpu_osm_driver_probe(struct platform_device *pdev)
 
 	is_sdm630 = of_device_is_compatible(pdev->dev.of_node,
 					"qcom,clk-cpu-osm-sdm630");
-	if (is_sdm630) {
-		pwrcl_boot_rate = 1382400000;
-		perfcl_boot_rate = 1670400000;
-	}
 
 	/* Set final boot rate */
 	rc = clk_set_rate(pwrcl_clk.hw.clk, pwrcl_boot_rate);
