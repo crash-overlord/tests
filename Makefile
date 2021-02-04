@@ -390,7 +390,7 @@ KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_CFLAGS   := -O3 -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -Wno-format-security -Wno-unused-function -Wno-array-bounds \
 		   -Wno-address -Wno-unused-variable -Wno-implicit-function-declaration \
 		   -fno-strict-aliasing -fno-common -ftree-vectorize -funroll-loops -ffast-math \
-		   -mtune=kryo \
+		   -mtune=cortex-a73.cortex-a53 \
 		   -std=gnu89 $(call cc-option,-fno-PIE)
 
 ifeq ($(TARGET_BOARD_TYPE),auto)
@@ -677,6 +677,10 @@ KBUILD_CFLAGS += $(call cc-ifversion, -gt, 0900, \
 
 KBUILD_CFLAGS += $(call cc-ifversion, -lt, 0409, \
 			$(call cc-disable-warning,maybe-uninitialized,))
+
+ifeq ($(CONFIG_ARCH_SDM660), y)
+KBUILD_CFLAGS   += -O3
+KBUILD_CFLAGS	+= -mcpu=cortex-a73 -mtune=cortex-a53
 
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
