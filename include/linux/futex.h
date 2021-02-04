@@ -10,8 +10,6 @@ struct mm_struct;
 struct task_struct;
 union ktime;
 
-long do_futex(u32 __user *uaddr, int op, u32 val, union ktime *timeout,
-	      u32 __user *uaddr2, u32 val2, u32 val3);
 
 /*
  * Futexes are matched on equal values of this key.
