@@ -201,7 +201,7 @@ int msm_bcl_unregister_param(struct bcl_param_data *param_data)
 
 int msm_bcl_disable(void)
 {
-	int ret = 0, i = 0;
+/*	int ret = 0, i = 0;
 
 	if (!bcl[i]) {
 		pr_err("BCL not initialized\n");
@@ -219,7 +219,10 @@ int msm_bcl_disable(void)
 		}
 	}
 
-	return ret;
+	return ret; */
+	return 0;
+
+    
 }
 
 int msm_bcl_enable(void)

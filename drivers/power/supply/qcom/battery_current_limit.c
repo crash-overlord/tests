@@ -868,7 +868,7 @@ show_bcl(hotplug_soc_mask, bcl_soc_hotplug_mask, "%d\n")
 show_bcl(hotplug_status, bcl_hotplug_request, "%d\n")
 show_bcl(soc_low_thresh, soc_low_threshold, "%d\n")
 
-static ssize_t
+/* static ssize_t
 mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	if (!gbcl)
@@ -897,7 +897,8 @@ mode_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	return count;
-}
+} */
+
 
 static ssize_t
 poll_interval_store(struct device *dev,
@@ -1248,7 +1249,7 @@ static struct device_attribute bcl_dev_attr[] = {
 	__ATTR(vbat_min, 0644, vbat_min_show, vbat_min_store),
 	__ATTR(vbat, 0444, vbat_show, NULL),
 	__ATTR(rbat, 0444, rbat_show, NULL),
-	__ATTR(mode, 0644, mode_show, mode_store),
+	__ATTR(mode, 0644, mode_show, NULL),
 	__ATTR(poll_interval, 0644,
 		poll_interval_show, poll_interval_store),
 	__ATTR(iavail_low_threshold_mode, 0644,
@@ -1267,7 +1268,7 @@ static struct device_attribute bcl_dev_attr[] = {
 
 static struct device_attribute btm_dev_attr[] = {
 	__ATTR(type, 0444, type_show, NULL),
-	__ATTR(mode, 0644, mode_show, mode_store),
+	__ATTR(mode, 0644, mode_show, NULL),
 	__ATTR(vph_state, 0444, vph_state_show, NULL),
 	__ATTR(ibat_state, 0444, ibat_state_show, NULL),
 	__ATTR(high_threshold_ua, 0644, high_ua_show, high_ua_store),
@@ -1778,8 +1779,9 @@ static int bcl_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, bcl);
 	INIT_DEFERRABLE_WORK(&bcl->bcl_iavail_work, bcl_iavail_work);
 	INIT_WORK(&bcl_hotplug_work, bcl_handle_hotplug);
-	if (bcl_mode == BCL_DEVICE_ENABLED)
-		bcl_mode_set(bcl_mode);
+//	if (bcl_mode == BCL_DEVICE_ENABLED)
+//		bcl_mode_set(bcl_mode);
+	bcl_mode_set(BCL_DEVICE_DISABLED);
 
 	return 0;
 }
